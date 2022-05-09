@@ -75,6 +75,7 @@ class Composer(object):
             self.add_diagrams(doc, element)
             self.add_shapes(doc, element)
             self.add_footnotes(doc, element)
+            self.add_comments(doc, element)
             self.remove_header_and_footer_references(doc, element)
             index += 1
 
@@ -182,6 +183,51 @@ class Composer(object):
                 rel = doc.part.rels[rid]
                 new_rel = self.add_relationship(None, self.doc.part, rel)
                 blip.set('{%s}link' % NS['r'], new_rel.rId)
+
+    def add_comments(self, doc, element):
+        """Add comments from the given document used in the given element."""
+        comments_refs = element.findall('.//w:commentReference', NS)
+
+        if not comments_refs:
+            return
+
+        comment_part = doc.part.rels.part_with_reltype(RT.COMMENTS)
+
+        my_comment_part = self.comments_part()
+
+        comments = parse_xml(my_comment_part.blob)
+        next_id = len(comments) + 1
+
+        for ref in comments_refs:
+            id_ = ref.get('{%s}id' % NS['w'])
+            element = parse_xml(comment_part.blob)
+            comment = deepcopy(element.find('.//w:comment[@w:id="%s"]' % id_, NS))
+
+            comments.append(comment)
+            comment.set('{%s}id' % NS['w'], str(next_id))
+            ref.set('{%s}id' % NS['w'], str(next_id))
+            next_id += 1
+
+        self.add_referenced_parts(comment_part, my_comment_part, element)
+
+        my_comment_part._blob = serialize_part_xml(comments)
+
+    def comments_part(self):
+        """The comments part of the document."""
+        try:
+            comments_part = self.doc.part.rels.part_with_reltype(RT.COMMENTS)
+        except KeyError:
+            # Create a new empty comments part
+            partname = PackURI('/word/comments.xml')
+            content_type = CT.WML_COMMENTS
+            xml_path = os.path.join(
+                os.path.dirname(__file__), 'templates', 'comments.xml')
+            with open(xml_path, 'rb') as f:
+                xml_bytes = f.read()
+            comments_part = Part(
+                partname, content_type, xml_bytes, self.doc.part.package)
+            self.doc.part.relate_to(comments_part, RT.COMMENTS)
+        return comments_part
 
     def add_shapes(self, doc, element):
         shapes = xpath(element, './/v:shape/v:imagedata')
