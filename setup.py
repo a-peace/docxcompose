@@ -11,7 +11,7 @@ tests_require = [
 
 setup(
     name='docxcompose',
-    version='1.3.5.dev0',
+    version='1.3.8.dev0',
     description="Compose .docx documents",
     long_description=(open("README.rst").read() + "\n" +
                       open("HISTORY.txt").read()),
@@ -36,6 +36,7 @@ setup(
         'python-docx >= 0.8.8',
         'setuptools',
         'six',
+        'babel',
     ],
     extras_require={
         'test': tests_require,
@@ -44,6 +45,6 @@ setup(
     entry_points={
         'console_scripts': [
             'docxcompose = docxcompose.command:main'
-      ]
-  },
+        ]
+    },
 )

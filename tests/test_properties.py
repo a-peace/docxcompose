@@ -1,15 +1,22 @@
 from datetime import datetime
 from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
+from docx.oxml import parse_xml
 from docxcompose.properties import ComplexField
+from docxcompose.properties import CUSTOM_PROPERTY_TYPES
 from docxcompose.properties import CustomProperties
 from docxcompose.properties import SimpleField
+from docxcompose.properties import value2vt
+from docxcompose.properties import vt2value
 from docxcompose.utils import xpath
+from lxml.etree import tostring
 from utils import assert_complex_field_value
 from utils import assert_simple_field_value
 from utils import cached_complex_field_values
-from utils import simple_field_expression
 from utils import docx_path
+from utils import simple_field_expression
+import docx
+import pytest
 
 
 class TestIdentifyDocpropertiesInDocument(object):
@@ -158,7 +165,7 @@ class TestIdentifyDocpropertiesInDocument(object):
             'd dd MMMM yyyy hh:mm:s" \\* MERGEFORMAT '
 
         assert prop.name == 'ogg.document.document_date'
-        assert prop.date_format == '%A %d %B %Y %H:%M:%-S'
+        assert prop.date_format == 'EEEE dd MMMM yyyy hh:mm:s'
 
     def test_finds_header_footer_of_different_sections(self):
         document = Document(docx_path('docproperties_header_footer_3_sections.docx'))
@@ -584,9 +591,24 @@ class TestUpdateAllDocproperties(object):
 
         CustomProperties(document).update_all()
 
-        expected_values = [u'23.01.20', u'Thursday 23 January 2020', u'23-1-20 10:0:0']
+        expected_values = [u'23.01.20', u'jeudi 23 janvier 2020', u'23-1-20 10:0:0']
         for i, (expected, paragraph) in enumerate(zip(expected_values, document.paragraphs)):
             assert paragraph.text == expected, 'docprop {} was not updated correctly'.format(i+1)
+
+    def test_date_docprops_respect_language(self):
+        document = Document(docx_path('date_docproperties_with_format.docx'))
+        assert len(document.paragraphs) == 3, 'input file should contain 3 paragraph'
+
+        CustomProperties(document).update_all()
+        document.paragraphs[1].text == u'jeudi 23 janvier 2020'
+
+        document.element.xpath('.//w:lang')[0].set(docx.oxml.shared.qn('w:val'),'de-CH')
+        CustomProperties(document).update_all()
+        document.paragraphs[1].text == u'Donnerstag 23 Januar 2020'
+
+        document.element.xpath('.//w:lang')[0].set(docx.oxml.shared.qn('w:val'),'en-US')
+        CustomProperties(document).update_all()
+        document.paragraphs[1].text == u'Thursday 23 January 2020'
 
     def test_docprops_with_split_fieldname_get_updated(self):
         document = Document(docx_path('complex_field_with_split_fieldname.docx'))
@@ -905,3 +927,43 @@ def test_doc_properties_items():
         ('Date Property', datetime(2019, 6, 11, 10, 0)),
         ('Float Property', 1.1),
     ]
+
+
+def test_vt2value_value2vt_roundtrip():
+    assert vt2value(value2vt(42)) == 42
+    assert vt2value(value2vt(True)) is True
+    assert vt2value(value2vt(1.1)) == pytest.approx(1.1)
+    dt = datetime(2019, 6, 11, 10, 0)
+    assert vt2value(value2vt(dt)) == dt
+    assert vt2value(value2vt(u'foo')) == u'foo'
+    assert vt2value(value2vt(u'')) == u''
+
+    node = parse_xml(CUSTOM_PROPERTY_TYPES['int'])
+    node.text = '42'
+    assert tostring(value2vt(vt2value(node))) == tostring(node)
+
+    node = parse_xml(CUSTOM_PROPERTY_TYPES['bool'])
+    node.text = 'true'
+    assert tostring(value2vt(vt2value(node))) == tostring(node)
+
+    node = parse_xml(CUSTOM_PROPERTY_TYPES['float'])
+    node.text = '1.1'
+    assert tostring(value2vt(vt2value(node))) == tostring(node)
+
+    node = parse_xml(CUSTOM_PROPERTY_TYPES['datetime'])
+    node.text = '2003-12-31T10:14:55Z'
+    assert tostring(value2vt(vt2value(node))) == tostring(node)
+
+    node = parse_xml(CUSTOM_PROPERTY_TYPES['text'])
+    node.text = 'foo'
+    assert tostring(value2vt(vt2value(node))) == tostring(node)
+
+    node = parse_xml(CUSTOM_PROPERTY_TYPES['text'])
+    node.text = ''
+    assert tostring(value2vt(vt2value(node))) == tostring(node)
+
+
+def test_vt2value_returns_empty_string_for_missing_text_node():
+    node = parse_xml(CUSTOM_PROPERTY_TYPES['text'])
+    node.text = None
+    assert vt2value(node) == u''
