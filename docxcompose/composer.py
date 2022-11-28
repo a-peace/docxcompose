@@ -23,12 +23,37 @@ REFERENCED_PARTS_IGNORED_RELTYPES = set([
     RT.IMAGE,
     RT.HEADER,
     RT.FOOTER,
-])
+    ])
 
 PART_RELTYPES_WITH_STYLES = [
     RT.FOOTNOTES,
 ]
 
+COMMENTS = {
+    'reltype': RT.COMMENTS,
+    'partname': "/word/comments.xml",
+    'content_type': CT.WML_COMMENTS,
+    'template': 'comments.xml',
+}
+COMMENTS_EXTENDED = {
+    'reltype': 'http://schemas.microsoft.com/office/2011/relationships/commentsExtended',
+    'partname': "/word/commentsExtended.xml",
+    'content_type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml',
+    'template': 'commentsExtended.xml',
+}
+# Not used now
+COMMENTS_IDS = {
+    'reltype': 'http://schemas.microsoft.com/office/2016/09/relationships/commentsIds',
+    'partname': "/word/commentsIds.xml",
+    'content_type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml',
+    'template': 'commentsIds.xml',
+}
+COMMENTS_EXTENSIBLE = {
+    'reltype': 'http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible',
+    'partname': "/word/commentsExtensible.xml",
+    'content_type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml',
+    'template': 'commentsExtensible.xml',
+}
 
 class Composer(object):
 
@@ -206,51 +231,74 @@ class Composer(object):
                 rel = doc.part.rels[rid]
                 new_rel = self.add_relationship(None, self.doc.part, rel)
                 blip.set('{%s}link' % NS['r'], new_rel.rId)
-
+    
     def add_comments(self, doc, element):
-        """Add comments from the given document used in the given element."""
+        """Add comments from the given document used in the given element.
+           Comments are described by 4 files, this function now support:
+            + comments.xml
+            + commentExtended.xml
+            - commentExtensible.xml
+            - commentsIds.xml
+        """
         comments_refs = element.findall('.//w:commentReference', NS)
-
         if not comments_refs:
             return
 
-        comment_part = doc.part.rels.part_with_reltype(RT.COMMENTS)
+        comments_start_refs = element.findall('.//w:commentRangeStart', NS)
+        comments_end_refs = element.findall('.//w:commentRangeEnd', NS)
 
-        my_comment_part = self.comments_part()
+        comment_part = doc.part.rels.part_with_reltype(COMMENTS['reltype'])
+        comments_extended_part = doc.part.rels.part_with_reltype(COMMENTS_EXTENDED['reltype'])
+
+        my_comment_part = self.comments_part(COMMENTS)
+        my_comments_extended_part = self.comments_part(COMMENTS_EXTENDED)
 
         comments = parse_xml(my_comment_part.blob)
+        comments_extended = parse_xml(my_comments_extended_part.blob)
         next_id = len(comments) + 1
 
-        for ref in comments_refs:
+        for i in range(len(comments_refs)):
+            ref = comments_refs[i]
             id_ = ref.get('{%s}id' % NS['w'])
-            element = parse_xml(comment_part.blob)
-            comment = deepcopy(element.find('.//w:comment[@w:id="%s"]' % id_, NS))
-
+            comment_el = parse_xml(comment_part.blob)
+            comment = deepcopy(comment_el.find('.//w:comment[@w:id="%s"]' % id_, NS))
             comments.append(comment)
             comment.set('{%s}id' % NS['w'], str(next_id))
             ref.set('{%s}id' % NS['w'], str(next_id))
+
+            comments_start_refs[i].set('{%s}id' % NS['w'], str(next_id))
+            comments_end_refs[i].set('{%s}id' % NS['w'], str(next_id))
+
+            comment_paragraphs = comment.findall('.//w:p', NS)
+            for p in comment_paragraphs:
+                paraId_ = p.get('{%s}paraId' % NS['w14'])
+                comment_extended_el = parse_xml(comments_extended_part.blob)
+                comment_extended = deepcopy(comment_extended_el.find('.//w15:commentEx[@w15:paraId="%s"]' % paraId_, NS))
+                if comment_extended is not None:
+                    comments_extended.append(comment_extended)
+
             next_id += 1
 
-        self.add_referenced_parts(comment_part, my_comment_part, element)
-
         my_comment_part._blob = serialize_part_xml(comments)
+        my_comments_extended_part._blob = serialize_part_xml(comments_extended)
 
-    def comments_part(self):
-        """The comments part of the document."""
+    def comments_part(self, comments):
+        """The comment part of the document."""
         try:
-            comments_part = self.doc.part.rels.part_with_reltype(RT.COMMENTS)
+            reltype = comments['reltype']
+            comments_part = self.doc.part.rels.part_with_reltype(reltype)
         except KeyError:
             # Create a new empty comments part
-            partname = PackURI('/word/comments.xml')
-            content_type = CT.WML_COMMENTS
+            partname = PackURI(comments['partname'])
+            content_type = comments['content_type']
             xml_path = os.path.join(
-                os.path.dirname(__file__), 'templates', 'comments.xml')
+                os.path.dirname(__file__), 'templates', comments['template'])
             with open(xml_path, 'rb') as f:
                 xml_bytes = f.read()
             comments_part = Part(
                 partname, content_type, xml_bytes, self.doc.part.package)
-            self.doc.part.relate_to(comments_part, RT.COMMENTS)
-        return comments_part
+            self.doc.part.relate_to(comments_part, reltype)
+        return comments_part  
 
     def add_shapes(self, doc, element):
         shapes = xpath(element, './/v:shape/v:imagedata')
