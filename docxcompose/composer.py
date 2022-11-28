@@ -88,6 +88,7 @@ class Composer(object):
                 cprops.dissolve_fields(name)
 
         self._create_style_id_mapping(doc)
+        comments_part = self.get_slave_comments_part(doc)
 
         for element in doc.element.body:
             if isinstance(element, CT_SectPr):
@@ -109,7 +110,8 @@ class Composer(object):
             self.add_diagrams(doc, element)
             self.add_shapes(doc, element)
             self.add_footnotes(doc, element)
-            self.add_comments(doc, element)
+            if comments_part is not None:
+                self.add_comments(element, comments_part)
             self.remove_header_and_footer_references(doc, element)
             index += 1
 
@@ -232,7 +234,7 @@ class Composer(object):
                 new_rel = self.add_relationship(None, self.doc.part, rel)
                 blip.set('{%s}link' % NS['r'], new_rel.rId)
     
-    def add_comments(self, doc, element):
+    def add_comments(self, element, comments_part):
         """Add comments from the given document used in the given element.
            Comments are described by 4 files, this function now support:
             + comments.xml
@@ -247,9 +249,6 @@ class Composer(object):
         comments_start_refs = element.findall('.//w:commentRangeStart', NS)
         comments_end_refs = element.findall('.//w:commentRangeEnd', NS)
 
-        comment_part = doc.part.rels.part_with_reltype(COMMENTS['reltype'])
-        comments_extended_part = doc.part.rels.part_with_reltype(COMMENTS_EXTENDED['reltype'])
-
         my_comment_part = self.comments_part(COMMENTS)
         my_comments_extended_part = self.comments_part(COMMENTS_EXTENDED)
 
@@ -260,8 +259,8 @@ class Composer(object):
         for i in range(len(comments_refs)):
             ref = comments_refs[i]
             id_ = ref.get('{%s}id' % NS['w'])
-            comment_el = parse_xml(comment_part.blob)
-            comment = deepcopy(comment_el.find('.//w:comment[@w:id="%s"]' % id_, NS))
+            comment_el = comments_part['comment_el']
+            comment = comment_el.find('.//w:comment[@w:id="%s"]' % id_, NS)
             comments.append(comment)
             comment.set('{%s}id' % NS['w'], str(next_id))
             ref.set('{%s}id' % NS['w'], str(next_id))
@@ -272,16 +271,36 @@ class Composer(object):
             comment_paragraphs = comment.findall('.//w:p', NS)
             for p in comment_paragraphs:
                 paraId_ = p.get('{%s}paraId' % NS['w14'])
-                comment_extended_el = parse_xml(comments_extended_part.blob)
-                comment_extended = deepcopy(comment_extended_el.find('.//w15:commentEx[@w15:paraId="%s"]' % paraId_, NS))
-                if comment_extended is not None:
-                    comments_extended.append(comment_extended)
+                if paraId_ is not None:
+                    nextParaId = f'{(int(paraId_, 16) + int(next_id)):x}'.upper()
+                    p.set('{%s}paraId' % NS['w14'], nextParaId)
+
+                    comment_extended_el = comments_part['comment_extended_el']
+                    comments_with_paraIdParent =  comment_extended_el.findall('.//w15:commentEx[@w15:paraIdParent="%s"]' % paraId_, NS)
+                    for i in comments_with_paraIdParent:
+                        i.set('{%s}paraIdParent' % NS['w15'], nextParaId)
+                    comment_extended = comment_extended_el.find('.//w15:commentEx[@w15:paraId="%s"]' % paraId_, NS)
+
+                    if comment_extended is not None:
+                        comment_extended.set('{%s}paraId' % NS['w15'], nextParaId)
+                        comments_extended.append(comment_extended)
 
             next_id += 1
 
         my_comment_part._blob = serialize_part_xml(comments)
         my_comments_extended_part._blob = serialize_part_xml(comments_extended)
-
+ 
+    def get_slave_comments_part(self, doc):
+        dict = {}
+        try:
+            comments = doc.part.rels.part_with_reltype(COMMENTS['reltype'])
+            dict['comment_el'] = deepcopy(parse_xml(comments.blob))
+            comments_ex = doc.part.rels.part_with_reltype(COMMENTS_EXTENDED['reltype'])
+            dict['comment_extended_el'] = deepcopy(parse_xml(comments_ex.blob))
+            return dict
+        except KeyError:
+            return None
+        
     def comments_part(self, comments):
         """The comment part of the document."""
         try:
