@@ -98,24 +98,26 @@ class TestFieldDateFormatMapping(object):
 
     def test_correctly_maps_date_with_weekday_and_month_name(self):
         date = datetime(2020, 11, 19, 23, 59, 43)
+        locale = "en"
 
         assert word_to_python_date_format('ddd dd MMM yyyy') == 'E dd MMM yyyy'
         assert format_datetime(date, word_to_python_date_format(
-            'ddd dd MMM yyyy')) == 'Thu 19 Nov 2020'
+            'ddd dd MMM yyyy'), locale=locale) == 'Thu 19 Nov 2020'
 
         assert word_to_python_date_format('dddd dd MMMM yyyy') == 'EEEE dd MMMM yyyy'
         assert format_datetime(date, word_to_python_date_format(
-            'dddd dd MMMM yyyy')) == 'Thursday 19 November 2020'
+            'dddd dd MMMM yyyy'), locale=locale) == 'Thursday 19 November 2020'
 
     def test_correctly_maps_date_with_time(self):
         date = datetime(2020, 11, 19, 1, 9, 8)
+        locale = "en"
 
         assert word_to_python_date_format(
             'ddd DD MMM YYYY HH:mm:ss') == 'E dd MMM yyyy HH:mm:ss'
         assert format_datetime(date, word_to_python_date_format(
-            'ddd DD MMM YYYY HH:mm:ss')) == 'Thu 19 Nov 2020 01:09:08'
+            'ddd DD MMM YYYY HH:mm:ss'), locale=locale) == 'Thu 19 Nov 2020 01:09:08'
 
         assert word_to_python_date_format(
             'ddd DD MMM YYYY H:m:s') == 'E dd MMM yyyy H:m:s'
         assert format_datetime(date, word_to_python_date_format(
-            'ddd DD MMM YYYY H:m:s')) == 'Thu 19 Nov 2020 1:9:8'
+            'ddd DD MMM YYYY H:m:s'), locale=locale) == 'Thu 19 Nov 2020 1:9:8'
